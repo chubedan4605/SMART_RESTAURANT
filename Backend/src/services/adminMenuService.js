@@ -3,6 +3,16 @@ const {
   validateCreateMenuItem,
   validateUpdateMenuItem,
 } = require("../validations/menuValidation");
+const cache = require("./cache");
+
+const MENU_CACHE_VERSION_KEY = "menu:version";
+
+// TTL cache cho các endpoint menu công khai (giá trị có thể set qua .env)
+const MENU_PUBLIC_TTL_SECONDS =
+  Number(process.env.REDIS_MENU_PUBLIC_TTL) || 300;
+const MENU_GUEST_TTL_SECONDS = Number(process.env.REDIS_MENU_GUEST_TTL) || 300;
+const MENU_TOPCHEF_TTL_SECONDS =
+  Number(process.env.REDIS_MENU_TOPCHEF_TTL) || 300;
 
 function toInt(n, fallback) {
   const x = parseInt(n, 10);
@@ -131,6 +141,8 @@ exports.updateMenuItem = async (id, body) => {
     isChefRecommended: data.isChefRecommended,
     isDeleted: data.isDeleted,
   });
+
+  await cache.bumpVersion(MENU_CACHE_VERSION_KEY);
 
   return updated; // null nếu not found
 };

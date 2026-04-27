@@ -1,70 +1,18 @@
 const repo = require("../repositories/menuRepository");
-const { getRedisClient, isRedisReady } = require("../config/redis");
+const cache = require("./cache");
 
 const MENU_CACHE_VERSION_KEY = "menu:version";
 
 // TTL cache cho các endpoint menu công khai (giá trị có thể set qua .env)
 const MENU_PUBLIC_TTL_SECONDS =
-  Number(process.env.REDIS_MENU_PUBLIC_TTL) || 120;
-const MENU_GUEST_TTL_SECONDS = Number(process.env.REDIS_MENU_GUEST_TTL) || 180;
-const MENU_TOPCHEF_TTL_SECONDS = Number(process.env.REDIS_MENU_TOPCHEF_TTL) || 120;
+  Number(process.env.REDIS_MENU_PUBLIC_TTL) || 300;
+const MENU_GUEST_TTL_SECONDS = Number(process.env.REDIS_MENU_GUEST_TTL) || 300;
+const MENU_TOPCHEF_TTL_SECONDS =
+  Number(process.env.REDIS_MENU_TOPCHEF_TTL) || 300;
 
 function toInt(v, def) {
   const n = Number(v);
   return Number.isFinite(n) ? n : def;
-}
-
-async function getMenuCacheVersion() {
-  const client = getRedisClient();
-  if (!client || !isRedisReady()) return "0";
-
-  try {
-    let version = await client.get(MENU_CACHE_VERSION_KEY);
-    if (!version) {
-      version = "1";
-      await client.set(MENU_CACHE_VERSION_KEY, version);
-    }
-    return version;
-  } catch (err) {
-    console.warn("Redis getMenuCacheVersion failed:", err.message);
-    return "0";
-  }
-}
-
-async function bumpMenuCacheVersion() {
-  const client = getRedisClient();
-  if (!client || !isRedisReady()) return;
-
-  try {
-    await client.incr(MENU_CACHE_VERSION_KEY);
-  } catch (err) {
-    console.warn("Redis bumpMenuCacheVersion failed:", err.message);
-  }
-}
-
-async function getCacheJson(key) {
-  const client = getRedisClient();
-  if (!client || !isRedisReady()) return null;
-
-  try {
-    const raw = await client.get(key);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch (err) {
-    console.warn("Redis get cache failed:", err.message);
-    return null;
-  }
-}
-
-async function setCacheJson(key, ttlInSeconds, value) {
-  const client = getRedisClient();
-  if (!client || !isRedisReady()) return;
-
-  try {
-    await client.setEx(key, ttlInSeconds, JSON.stringify(value));
-  } catch (err) {
-    console.warn("Redis set cache failed:", err.message);
-  }
 }
 
 // ===== CATEGORIES =====
@@ -88,7 +36,7 @@ exports.createCategory = async (payload) => {
       status: payload.status ?? "active",
     });
 
-    await bumpMenuCacheVersion();
+    await cache.bumpVersion(MENU_CACHE_VERSION_KEY);
 
     return created;
   } catch (e) {
@@ -116,7 +64,7 @@ exports.updateCategory = async (id, payload) => {
     throw err;
   }
 
-  await bumpMenuCacheVersion();
+  await cache.bumpVersion(MENU_CACHE_VERSION_KEY);
 
   return updated;
 };
@@ -209,12 +157,13 @@ exports.createMenuItem = async (body, filePathOrNull) => {
     await repo.insertMenuItemPhoto(newItem.id, filePathOrNull, true);
   }
 
-  await bumpMenuCacheVersion();
+  await cache.bumpVersion(MENU_CACHE_VERSION_KEY);
 
   return newItem;
 };
 
 exports.updateMenuItem = async (id, body, imageUrlOrUndefined) => {
+  console.log("Updating menu item", { id, body, imageUrlOrUndefined });
   // validate partial
   if (body.name !== undefined) {
     const name = String(body.name).trim();
@@ -307,13 +256,13 @@ exports.updateMenuItem = async (id, body, imageUrlOrUndefined) => {
     throw err;
   }
 
-  await bumpMenuCacheVersion();
+  await cache.bumpVersion(MENU_CACHE_VERSION_KEY);
   return updated;
 };
 
 exports.deleteMenuItem = async (id) => {
   await repo.softDeleteMenuItem(id);
-  await bumpMenuCacheVersion();
+  await cache.bumpVersion(MENU_CACHE_VERSION_KEY);
   return { message: "Đã xóa (Soft delete)" };
 };
 
@@ -324,21 +273,19 @@ exports.addItemPhotos = async (id, files) => {
     throw err;
   }
   await Promise.all(files.map((f) => repo.insertMenuItemPhoto(id, f.path)));
-  await bumpMenuCacheVersion();
+  await cache.bumpVersion(MENU_CACHE_VERSION_KEY);
   return { message: `Đã thêm ${files.length} ảnh` };
 };
 
 exports.getGuestMenu = async () => {
-  const version = await getMenuCacheVersion();
-  const cacheKey = `menu:guest:v${version}`;
+  const version = await cache.getVersion(MENU_CACHE_VERSION_KEY);
+  const cacheKey = cache.buildKey([`menu:guest`, `v:${version}`]);
 
-  const cached = await getCacheJson(cacheKey);
-  if (cached) {
-    return cached;
-  }
+  const cached = await cache.getJson(cacheKey);
+  if (cached) return cached;
 
   const data = await repo.findGuestMenu();
-  await setCacheJson(cacheKey, MENU_GUEST_TTL_SECONDS, data);
+  await cache.setJson(cacheKey, MENU_GUEST_TTL_SECONDS, data);
   return data;
 };
 
@@ -375,22 +322,20 @@ exports.getMenuItemsPublic = async (query) => {
     query.chef === 1 ||
     query.chef === "1";
 
-  const version = await getMenuCacheVersion();
-  const cacheKey = [
+  const version = await cache.getVersion(MENU_CACHE_VERSION_KEY);
+  const cacheKey = cache.buildKey([
     "menu:public",
     `v:${version}`,
     `page:${page}`,
     `limit:${limit}`,
     `category:${category_id || "all"}`,
     `sort:${sort}`,
-    `search:${encodeURIComponent(search)}`,
+    `search:${cache.encodeOrHash(search)}`,
     `chef:${chef ? 1 : 0}`,
-  ].join("|");
+  ]);
 
-  const cached = await getCacheJson(cacheKey);
-  if (cached) {
-    return cached;
-  }
+  const cached = await cache.getJson(cacheKey);
+  if (cached) return cached;
 
   const { rows, total } = await repo.findMenuItemsPublic({
     category_id,
@@ -411,18 +356,20 @@ exports.getMenuItemsPublic = async (query) => {
     },
   };
 
-  await setCacheJson(cacheKey, MENU_PUBLIC_TTL_SECONDS, payload);
+  await cache.setJson(cacheKey, MENU_PUBLIC_TTL_SECONDS, payload);
   return payload;
 };
 
 exports.getTopChefBestSeller = async (limit) => {
-  const version = await getMenuCacheVersion();
-  const cacheKey = `menu:top-chef:v${version}:limit:${limit}`;
+  const version = await cache.getVersion(MENU_CACHE_VERSION_KEY);
+  const cacheKey = cache.buildKey([
+    `menu:top-chef`,
+    `v:${version}`,
+    `limit:${limit}`,
+  ]);
 
-  const cached = await getCacheJson(cacheKey);
-  if (cached) {
-    return cached;
-  }
+  const cached = await cache.getJson(cacheKey);
+  if (cached) return cached;
 
   const rows = await repo.findTopChefBestSeller(limit);
   const data = rows.map((r) => ({

@@ -38,6 +38,9 @@ const Navbar = () => {
 
   // Xác định role hiện tại
   const role = user?.role;
+
+  console.log("Current User Role in Navbar:", role); // Debug role
+
   const cartCount = useSelector(selectTotalItems);
   const tableNumber = localStorage.getItem("tableNumber");
 

@@ -50,11 +50,12 @@ import Forgot from "../features/Auth/Forgot/Forgot";
 import ResetPassword from "../features/Auth/ResetPassword/ResetPassword";
 import OrderDetail from "../features/Customer/OrderDetail";
 import OrderTrackingPage from "../features/Customer/OrderTrackingPage";
+import MainLayout from "../layouts/MainLayout";
 const routers = [
   // ===== PUBLIC ROUTES (Login/Register/Scan) =====
   {
     path: "/",
-    element: <CustomerLayout />,
+    element: <MainLayout />,
     children: [
       { index: true, element: <LandingPage /> },
       { path: "menu", element: <Menu /> },
@@ -88,7 +89,7 @@ const routers = [
     element: <ProtectedRoute />,
     children: [
       {
-        element: <CustomerLayout />,
+        element: <MainLayout />,
         children: [
           {
             path: "history",
@@ -109,7 +110,7 @@ const routers = [
     element: <ProtectedRoute roles={["admin"]} />,
     children: [
       {
-        element: <AdminLayout />,
+        element: <MainLayout />,
         children: [
           {
             index: true,
@@ -150,7 +151,7 @@ const routers = [
     element: <ProtectedRoute roles={["waiter"]} />,
     children: [
       {
-        element: <WaiterLayout />,
+        element: <MainLayout />,
         children: [
           {
             index: true, // Mặc định vào danh sách bàn hoặc order
@@ -171,7 +172,7 @@ const routers = [
     element: <ProtectedRoute roles={["kitchen"]} />,
     children: [
       {
-        element: <KitchenLayout />,
+        element: <MainLayout />,
         children: [
           {
             index: true,

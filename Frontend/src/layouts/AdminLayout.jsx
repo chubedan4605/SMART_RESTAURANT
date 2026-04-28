@@ -4,6 +4,9 @@ import AdminNavbar from "../Components/AdminNavbar";
 import { AdminSocketProvider } from "../context/AdminSocketContext";
 
 export default function AdminLayout() {
+
+  console.log("Rendering AdminLayout"); // Debug render AdminLayout
+
   return (
     <AdminSocketProvider>
       <div className="min-h-screen bg-neutral-950 text-white flex flex-col">

@@ -16,26 +16,19 @@ const MainLayout = () => {
   const user = JSON.parse(localStorage.getItem("user")); // Lấy thông tin user từ localStorage
   console.log("User in MainLayout:", user); // Debug thông tin user
 
-  // Kích hoạt socket listener cho toàn bộ customer pages
-  const { isConnected } = useCustomerSocket();
-
-  return (
-    <>
-      {user ? (
-        <CustomerLayout />
-      ) : user.role === "customer" ? (
-        <CustomerLayout />
-      ) : user.role === "admin" ? (
-        <AdminLayout />
-      ) : user.role === "waiter" ? (
-        <WaiterLayout />
-      ) : user.role === "kitchen" ? (
-        <KitchenLayout />
-      ) : (
-        <CustomerLayout />
-      )}
-    </>
-  );
+  if(!user) {
+    return <CustomerLayout />;
+  }
+  
+  if(user.role === "customer") {
+    return <CustomerLayout />;
+  } else if(user.role === "admin") {
+    return <AdminLayout />;
+  } else if(user.role === "waiter") {
+    return <WaiterLayout />;
+  } else if(user.role === "kitchen") {
+    return <KitchenLayout />;
+  }
 };
 
 export default MainLayout;

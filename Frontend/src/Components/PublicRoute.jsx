@@ -11,14 +11,15 @@ const PublicRoute = () => {
 
     // Redirect based on role
     if (user?.role === "admin") {
-      <Navigate to="/admin" replace />;
+      return <Navigate to="/admin" replace />;
     } else if (user?.role === "waiter") {
-      <Navigate to="/waiter" replace />;
+      return <Navigate to="/waiter" replace />;
     } else if (user?.role === "kitchen") {
-      <Navigate to="/kitchen" replace />;
+      return <Navigate to="/kitchen" replace />;
     }
 
-    <Navigate to="/" replace />;
+    // Nếu là user bình thường (khách), cho render các trang public (Outlet)
+    return <Outlet />;
   }
 
   return <Outlet />;

@@ -1,6 +1,18 @@
 const crypto = require("crypto");
 const { getRedisClient, isRedisReady } = require("../config/redis");
 
+const RELEASE_LOCK_SCRIPT =
+  "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function makeToken() {
+  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return crypto.randomBytes(16).toString("hex");
+}
+
 function encodeOrHash(s) {
   if (!s) return "";
   const str = String(s);
@@ -61,6 +73,70 @@ async function bumpVersion(versionKey = "menu:version") {
   }
 }
 
+async function getOrSetJsonWithLock({
+  key,
+  ttlSeconds,
+  lockKey = `${key}:lock`,
+  lockTtlMs = 8000,
+  waitMs = 50,
+  retries = 6,
+  buildFn,
+}) {
+  const cached = await getJson(key);
+  if (cached) {
+    console.log(`[cache] hit ${key}`);
+    return cached;
+  }
+
+  const client = getRedisClient();
+  if (!client || !isRedisReady()) {
+    const value = await buildFn();
+    return value;
+  }
+
+  const token = makeToken();
+  let acquired = false;
+  try {
+    const result = await client.set(lockKey, token, {
+      NX: true,
+      PX: lockTtlMs,
+    });
+    acquired = result === "OK";
+  } catch (err) {
+    console.warn("Redis lock failed:", err.message);
+  }
+
+  if (acquired) {
+    try {
+      const value = await buildFn();
+      await setJson(key, ttlSeconds, value);
+      return value;
+    } finally {
+      try {
+        await client.eval(RELEASE_LOCK_SCRIPT, {
+          keys: [lockKey],
+          arguments: [token],
+        });
+      } catch (err) {
+        console.warn("Redis lock release failed:", err.message);
+      }
+    }
+  }
+
+  for (let i = 0; i < retries; i += 1) {
+    await sleep(waitMs + Math.floor(Math.random() * waitMs));
+    const retryCached = await getJson(key);
+    if (retryCached) {
+      console.log(`[cache] hit-after-wait ${key}`);
+      return retryCached;
+    }
+  }
+
+  const value = await buildFn();
+  await setJson(key, ttlSeconds, value);
+  return value;
+}
+
 module.exports = {
   encodeOrHash,
   buildKey,
@@ -68,4 +144,5 @@ module.exports = {
   setJson,
   getVersion,
   bumpVersion,
+  getOrSetJsonWithLock,
 };

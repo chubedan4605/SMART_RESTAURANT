@@ -380,6 +380,6 @@ exports.getTopChefBestSeller = async (limit) => {
     soldQty: Number(r.sold_qty),
   }));
 
-  await setCacheJson(cacheKey, MENU_TOPCHEF_TTL_SECONDS, data);
+  await cache.setJson(cacheKey, MENU_TOPCHEF_TTL_SECONDS, data);
   return data;
 };

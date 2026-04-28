@@ -1,4 +1,11 @@
 const db = require("../config/db");
+const cache = require("../services/cache");
+const {
+  DASHBOARD_CACHE_TTL_SECONDS,
+  DASHBOARD_LOCK_TTL_MS,
+  DASHBOARD_LOCK_WAIT_MS,
+  DASHBOARD_LOCK_RETRIES,
+} = require("../config/cache");
 
 /**
  * Giả định schema thường gặp:
@@ -27,40 +34,69 @@ exports.countUsers = async () => {
 };
 
 exports.revenueThisMonth = async () => {
-  // doanh thu tháng hiện tại, đơn đã thanh toán/hoàn thành
-  // đổi status theo hệ thống bạn: paid / completed / done...
-  const { rows } = await db.query(`
-    SELECT COALESCE(SUM(total_amount), 0)::bigint AS revenue
-    FROM orders
-    WHERE status IN ('paid','completed','done')
-      AND date_trunc('month', created_at) = date_trunc('month', NOW())
-  `);
-  return rows[0].revenue;
+  const monthKey = new Date().toISOString().slice(0, 7);
+  const cacheKey = cache.buildKey(["dashboard:revenue:month", `m:${monthKey}`]);
+
+  return cache.getOrSetJsonWithLock({
+    key: cacheKey,
+    ttlSeconds: DASHBOARD_CACHE_TTL_SECONDS,
+    lockTtlMs: DASHBOARD_LOCK_TTL_MS,
+    waitMs: DASHBOARD_LOCK_WAIT_MS,
+    retries: DASHBOARD_LOCK_RETRIES,
+    buildFn: async () => {
+      // doanh thu tháng hiện tại, đơn đã thanh toán/hoàn thành
+      // đổi status theo hệ thống bạn: paid / completed / done...
+      const { rows } = await db.query(`
+        SELECT COALESCE(SUM(total_amount), 0)::bigint AS revenue
+        FROM orders
+        WHERE status IN ('paid','completed','done')
+          AND date_trunc('month', created_at) = date_trunc('month', NOW())
+      `);
+      return rows[0].revenue;
+    },
+  });
 };
 
 exports.topOrderedDishes = async (limit = 5) => {
-  const { rows } = await db.query(
-    `
-    SELECT
-      mi.id,
-      mi.name,
-      mi.category_id,
-      SUM(oi.quantity)::int AS orders
-    FROM order_items oi
-    JOIN orders o ON o.id = oi.order_id
-    LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
-    WHERE o.status NOT IN ('pending', 'rejected')
-      AND oi.status != 'rejected'
-      AND date_trunc('month', o.created_at) = date_trunc('month', NOW())
-      AND mi.id IS NOT NULL
-    GROUP BY mi.id, mi.name, mi.category_id
-    ORDER BY orders DESC
-    LIMIT $1
-    `,
-    [limit],
-  );
+  const monthKey = new Date().toISOString().slice(0, 7);
+  const cacheKey = cache.buildKey([
+    "dashboard:top-ordered",
+    `m:${monthKey}`,
+    `limit:${limit}`,
+  ]);
 
-  return rows;
+  return cache.getOrSetJsonWithLock({
+    key: cacheKey,
+    ttlSeconds: DASHBOARD_CACHE_TTL_SECONDS,
+    lockTtlMs: DASHBOARD_LOCK_TTL_MS,
+    waitMs: DASHBOARD_LOCK_WAIT_MS,
+    retries: DASHBOARD_LOCK_RETRIES,
+    buildFn: async () => {
+      const { rows } = await db.query(
+        `
+        SELECT
+
+        mi.id,
+          mi.name,
+          mi.category_id,
+          SUM(oi.quantity)::int AS orders
+        FROM order_items oi
+        JOIN orders o ON o.id = oi.order_id
+        LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+        WHERE o.status NOT IN ('pending', 'rejected')
+          AND oi.status != 'rejected'
+          AND date_trunc('month', o.created_at) = date_trunc('month', NOW())
+          AND mi.id IS NOT NULL
+        GROUP BY mi.id, mi.name, mi.category_id
+        ORDER BY orders DESC
+        LIMIT $1
+        `,
+        [limit],
+      );
+
+      return rows;
+    },
+  });
 };
 
 exports.topRatedDishes = async (limit = 5) => {
@@ -147,26 +183,41 @@ exports.ordersDaily = async ({ from, to }) => {
 };
 
 exports.peakHours = async ({ from, to }) => {
-  const { rows } = await db.query(
-    `
-    select
-      extract(hour from created_at)::int as hour,
-      count(*)::int as orders
-    from orders
-    where created_at >= $1 and created_at < $2
-      and lower(status) = any($3)
-    group by 1
-    order by 1 asc
-    `,
-    [from, to, ORDER_OK.map((s) => s.toLowerCase())],
-  );
+  const rangeKey = cache.encodeOrHash(`${from}|${to}`);
+  const cacheKey = cache.buildKey([
+    "dashboard:peak-hours",
+    `range:${rangeKey}`,
+  ]);
 
-  // fill 0..23
-  const map = new Map(rows.map((r) => [Number(r.hour), Number(r.orders)]));
-  return Array.from({ length: 24 }).map((_, h) => ({
-    hour: h,
-    orders: map.get(h) || 0,
-  }));
+  return cache.getOrSetJsonWithLock({
+    key: cacheKey,
+    ttlSeconds: DASHBOARD_CACHE_TTL_SECONDS,
+    lockTtlMs: DASHBOARD_LOCK_TTL_MS,
+    waitMs: DASHBOARD_LOCK_WAIT_MS,
+    retries: DASHBOARD_LOCK_RETRIES,
+    buildFn: async () => {
+      const { rows } = await db.query(
+        `
+        select
+          extract(hour from created_at)::int as hour,
+          count(*)::int as orders
+        from orders
+        where created_at >= $1 and created_at < $2
+          and lower(status) = any($3)
+        group by 1
+        order by 1 asc
+        `,
+        [from, to, ORDER_OK.map((s) => s.toLowerCase())],
+      );
+
+      // fill 0..23
+      const map = new Map(rows.map((r) => [Number(r.hour), Number(r.orders)]));
+      return Array.from({ length: 24 }).map((_, h) => ({
+        hour: h,
+        orders: map.get(h) || 0,
+      }));
+    },
+  });
 };
 
 exports.popularItems = async ({ from, to, limit }) => {

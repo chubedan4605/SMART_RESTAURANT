@@ -4,6 +4,8 @@ const ProtectedRoute = ({ roles }) => {
   const user = JSON.parse(localStorage.getItem("user"));
   const token = localStorage.getItem("accessToken");
 
+  console.log("User in ProtectedRoute:", user); // Debug thông tin user
+
   if (!token || !user) {
     return <Navigate to="/signin" replace />;
   }

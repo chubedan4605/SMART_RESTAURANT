@@ -10,7 +10,8 @@ const CustomerLayout = () => {
   const sessionId = localStorage.getItem("tableSessionId");
 
   // Kích hoạt socket listener cho toàn bộ customer pages
-  const { isConnected } = useCustomerSocket();
+  // const { isConnected } = useCustomerSocket();
+  // console.log("CustomerLayout - Socket connected:", isConnected); // Debug trạng thái kết nối socket
 
   return (
     <div className="min-h-screen bg-neutral-950 text-gray-100 flex flex-col font-sans selection:bg-orange-500 selection:text-white">

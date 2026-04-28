@@ -6,8 +6,7 @@ import React, {
   useCallback,
 } from "react";
 import io from "socket.io-client";
-import { useSelector } from "react-redux"; // Nếu bạn dùng Redux cho Auth
-// Hoặc import { useAuth } from './AuthContext' nếu dùng Context
+import { useSelector } from "react-redux";
 
 const SocketContext = createContext();
 
@@ -21,6 +20,8 @@ export const SocketProvider = ({ children }) => {
 
   // Lấy user để biết role (Redux example)
   const { user } = useSelector((state) => state.auth);
+
+  console.log("User in SocketProvider:", user); // Debug thông tin user
 
   // Hàm để cập nhật tableInfo khi qrToken thay đổi (gọi từ bên ngoài nếu cần)
   const updateTableInfo = useCallback(() => {

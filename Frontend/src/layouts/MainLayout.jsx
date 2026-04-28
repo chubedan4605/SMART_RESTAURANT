@@ -21,15 +21,19 @@ const MainLayout = () => {
 
   return (
     <>
-      {user.role === "customer" ? (
+      {user ? (
+        <CustomerLayout />
+      ) : user.role === "customer" ? (
         <CustomerLayout />
       ) : user.role === "admin" ? (
         <AdminLayout />
       ) : user.role === "waiter" ? (
         <WaiterLayout />
-      ) : (
+      ) : user.role === "kitchen" ? (
         <KitchenLayout />
-      )}{" "}
+      ) : (
+        <CustomerLayout />
+      )}
     </>
   );
 };

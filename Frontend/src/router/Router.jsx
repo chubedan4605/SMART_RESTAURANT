@@ -6,7 +6,6 @@ import SignIn from "../features/Auth/SignIn/SignIn";
 import SignUp from "../features/Auth/SignUp/SignUp";
 
 // Layouts
-
 import AdminLayout from "../layouts/AdminLayout";
 import WaiterLayout from "../layouts/WaiterLayout";
 import KitchenLayout from "../layouts/KitchenLayout";
@@ -55,20 +54,25 @@ const routers = [
   // ===== PUBLIC ROUTES (Login/Register/Scan) =====
   {
     path: "/",
-    element: <MainLayout />,
+    element: <PublicRoute />,
     children: [
-      { index: true, element: <LandingPage /> },
-      { path: "menu", element: <Menu /> },
-      { path: "menu/:tableCode", element: <Menu /> },
-      { path: "cart", element: <Cart /> },
-      { path: "cart/:tableCode", element: <Cart /> },
-      { path: "booking", element: <Booking /> },
-      { path: "order-tracking", element: <OrderTrackingPage /> },
-      { path: "orders/:id", element: <OrderDetail /> },
-      { path: "bill", element: <Bill /> },
-      { path: "scan/:tableCode", element: <ScanQR /> },
-      { path: "payment-success", element: <PaymentSuccess /> },
-      { path: "payment-cancelled", element: <PaymentCancelled /> },
+      {
+        element: <CustomerLayout />,
+        children: [
+          { index: true, element: <LandingPage /> },
+          { path: "menu", element: <Menu /> },
+          { path: "menu/:tableCode", element: <Menu /> },
+          { path: "cart", element: <Cart /> },
+          { path: "cart/:tableCode", element: <Cart /> },
+          { path: "booking", element: <Booking /> },
+          { path: "order-tracking", element: <OrderTrackingPage /> },
+          { path: "orders/:id", element: <OrderDetail /> },
+          { path: "bill", element: <Bill /> },
+          { path: "scan/:tableCode", element: <ScanQR /> },
+          { path: "payment-success", element: <PaymentSuccess /> },
+          { path: "payment-cancelled", element: <PaymentCancelled /> },
+        ],
+      },
     ],
   },
 

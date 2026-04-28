@@ -3,18 +3,22 @@ import { Navigate, Outlet } from "react-router-dom";
 const PublicRoute = () => {
   const token = localStorage.getItem("accessToken");
 
+  // console.log("Token in PublicRoute:", token); // Debug token
+
   if (token) {
     const user = JSON.parse(localStorage.getItem("user"));
+    // console.log("User in PublicRoute:", user); // Debug user
+
     // Redirect based on role
     if (user?.role === "admin") {
-      return <Navigate to="/admin" replace />;
+      <Navigate to="/admin" replace />;
     } else if (user?.role === "waiter") {
-      return <Navigate to="/waiter" replace />;
+      <Navigate to="/waiter" replace />;
     } else if (user?.role === "kitchen") {
-      return <Navigate to="/kitchen" replace />;
+      <Navigate to="/kitchen" replace />;
     }
-    
-    return <Navigate to="/" replace />;
+
+    <Navigate to="/" replace />;
   }
 
   return <Outlet />;

@@ -12,6 +12,16 @@ const refreshTokenRepo = require("../repositories/refreshTokenRepository");
 const { sendVerifyEmail } = require("../utils/mailer");
 const crypto = require("crypto");
 const emailVerifyRepo = require("../repositories/emailVerifyRepository");
+const rateLimiter = require("./rateLimiter");
+const {
+  LOGIN_WINDOW_SECONDS,
+  LOGIN_IP_LIMIT,
+  LOGIN_EMAIL_LIMIT,
+  FORGOT_WINDOW_SECONDS,
+  FORGOT_LIMIT,
+  RESEND_WINDOW_SECONDS,
+  RESEND_LIMIT,
+} = require("../config/rateLimit");
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -41,7 +51,7 @@ exports.googleLogin = async ({ credential }) => {
   // 1) tìm user theo email
   let user = await authRepo.findUserPublicByEmail(email);
 
-  console.log('Google login user found:', user);
+  console.log("Google login user found:", user);
 
   // 2) chưa có thì tạo user mới (role customer)
   if (!user) {
@@ -59,13 +69,13 @@ exports.googleLogin = async ({ credential }) => {
   const accessToken = jwt.sign(
     { id: user.id, role: user.role, name: user.name },
     config.auth.accessTokenSecret,
-    { expiresIn: "30m" }
+    { expiresIn: "30m" },
   );
 
   const refreshToken = jwt.sign(
     { id: user.id, role: user.role, name: user.name },
     config.auth.refreshTokenSecret,
-    { expiresIn: "30d" }
+    { expiresIn: "30d" },
   );
 
   const refreshTokenHash = hashToken(refreshToken);
@@ -78,7 +88,13 @@ exports.googleLogin = async ({ credential }) => {
   return {
     accessToken,
     refreshToken,
-    user: { id: user.id, name: user.name, role: user.role, email: user.email, avatar_url: user.avatar_url},
+    user: {
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      email: user.email,
+      avatar_url: user.avatar_url,
+    },
   };
 };
 
@@ -119,7 +135,7 @@ exports.register = async ({ name, email, password, role }) => {
   });
 
   const baseUrl = process.env.CLIENT_URL || "http://localhost:3000";
-  console.log('Base URL for email verification:', baseUrl);
+  console.log("Base URL for email verification:", baseUrl);
   const verifyUrl = `${baseUrl}/verify-email?token=${rawToken}&email=${encodeURIComponent(user.email)}`;
 
   await sendVerifyEmail({
@@ -131,14 +147,32 @@ exports.register = async ({ name, email, password, role }) => {
   return user; // {id,name,email,role}
 };
 
-exports.login = async ({ email, password }) => {
+exports.login = async ({ email, password, ip }) => {
   if (!email || !password) {
     const err = new Error("Vui lòng nhập email và mật khẩu");
     err.status = 400;
     throw err;
   }
 
-  const user = await authRepo.findUserByEmail(email);
+  const cleanEmail = String(email).trim().toLowerCase();
+  const cleanIp = rateLimiter.normalizeIp(ip);
+
+  await rateLimiter.enforceFixedWindow({
+    key: rateLimiter.buildKey("login:email", cleanEmail),
+    limit: LOGIN_EMAIL_LIMIT,
+    windowSeconds: LOGIN_WINDOW_SECONDS,
+    errorMessage: "Đăng nhập quá nhiều lần. Vui lòng thử lại sau.",
+  });
+  if (cleanIp) {
+    await rateLimiter.enforceFixedWindow({
+      key: rateLimiter.buildKey("login:ip", cleanIp),
+      limit: LOGIN_IP_LIMIT,
+      windowSeconds: LOGIN_WINDOW_SECONDS,
+      errorMessage: "Đăng nhập quá nhiều lần. Vui lòng thử lại sau.",
+    });
+  }
+
+  const user = await authRepo.findUserByEmail(cleanEmail);
   if (!user) {
     const err = new Error("Tài khoản không tồn tại");
     err.status = 401;
@@ -151,7 +185,6 @@ exports.login = async ({ email, password }) => {
     throw err;
   }
 
-
   const isMatch = await bcrypt.compare(password, user.password);
   if (!isMatch) {
     const err = new Error("Sai mật khẩu");
@@ -163,14 +196,14 @@ exports.login = async ({ email, password }) => {
   const accessToken = jwt.sign(
     { id: user.id, role: user.role, name: user.name },
     config.auth.accessTokenSecret,
-    { expiresIn: "30m" }
+    { expiresIn: "30m" },
   );
 
   // Refresh token dài hạn
   const refreshToken = jwt.sign(
     { id: user.id, role: user.role, name: user.name },
     config.auth.refreshTokenSecret,
-    { expiresIn: "30d" }
+    { expiresIn: "30d" },
   );
 
   const refreshTokenHash = hashToken(refreshToken);
@@ -221,13 +254,13 @@ exports.refreshToken = async (refreshToken) => {
     const newAccessToken = jwt.sign(
       { id: user.id, role: user.role, name: user.name },
       config.auth.accessTokenSecret,
-      { expiresIn: "30m" }
+      { expiresIn: "30m" },
     );
 
     const newRefreshToken = jwt.sign(
       { id: user.id },
       config.auth.refreshTokenSecret,
-      { expiresIn: "30d" }
+      { expiresIn: "30d" },
     );
 
     const newHash = hashToken(newRefreshToken);
@@ -253,13 +286,12 @@ exports.refreshToken = async (refreshToken) => {
     const err = new Error(
       e.name === "TokenExpiredError"
         ? "Refresh token đã hết hạn"
-        : "Refresh token không hợp lệ"
+        : "Refresh token không hợp lệ",
     );
     err.status = 401;
     throw err;
   }
 };
-
 
 exports.verifyEmail = async ({ email, token }) => {
   if (!email || !token) {
@@ -294,13 +326,31 @@ exports.verifyEmail = async ({ email, token }) => {
   return { verified: true };
 };
 
-exports.resendVerifyEmail = async ({ email }) => {
-  const e = String(email || "").trim().toLowerCase();
+exports.resendVerifyEmail = async ({ email, ip }) => {
+  const e = String(email || "")
+    .trim()
+    .toLowerCase();
   if (!e) {
     const err = new Error("Vui lòng nhập email");
     err.status = 400;
     throw err;
   }
+
+  const cleanIp = rateLimiter.normalizeIp(ip);
+  if (cleanIp) {
+    await rateLimiter.enforceFixedWindow({
+      key: rateLimiter.buildKey("resend:ip", cleanIp),
+      limit: RESEND_LIMIT,
+      windowSeconds: RESEND_WINDOW_SECONDS,
+      errorMessage: "Gửi lại email quá nhiều lần. Vui lòng thử lại sau.",
+    });
+  }
+  await rateLimiter.enforceFixedWindow({
+    key: rateLimiter.buildKey("resend:email", e),
+    limit: RESEND_LIMIT,
+    windowSeconds: RESEND_WINDOW_SECONDS,
+    errorMessage: "Gửi lại email quá nhiều lần. Vui lòng thử lại sau.",
+  });
 
   const user = await authRepo.findUserByEmail(e);
   if (!user) {
@@ -325,9 +375,28 @@ exports.resendVerifyEmail = async ({ email }) => {
   return { sent: true };
 };
 
-exports.forgotPassword = async ({ email }) => {
-  const cleanEmail = String(email || "").trim().toLowerCase();
+exports.forgotPassword = async ({ email, ip }) => {
+  const cleanEmail = String(email || "")
+    .trim()
+    .toLowerCase();
+
+  const cleanIp = rateLimiter.normalizeIp(ip);
+  if (cleanIp) {
+    await rateLimiter.enforceFixedWindow({
+      key: rateLimiter.buildKey("forgot:ip", cleanIp),
+      limit: FORGOT_LIMIT,
+      windowSeconds: FORGOT_WINDOW_SECONDS,
+      errorMessage: "Yêu cầu đặt lại mật khẩu quá nhiều lần.",
+    });
+  }
+
   if (!cleanEmail) return;
+  await rateLimiter.enforceFixedWindow({
+    key: rateLimiter.buildKey("forgot:email", cleanEmail),
+    limit: FORGOT_LIMIT,
+    windowSeconds: FORGOT_WINDOW_SECONDS,
+    errorMessage: "Yêu cầu đặt lại mật khẩu quá nhiều lần.",
+  });
 
   // tìm user public để lấy id/name/email
   const user = await authRepo.findUserPublicByEmail(cleanEmail);
@@ -336,7 +405,7 @@ exports.forgotPassword = async ({ email }) => {
   if (!user) return;
 
   // revoke token cũ (optional nhưng tốt)
-  await passwordResetRepo.revokeAllByUserId(user.id); 
+  await passwordResetRepo.revokeAllByUserId(user.id);
 
   // raw token gửi cho user qua email
   const rawToken = crypto.randomBytes(32).toString("hex");

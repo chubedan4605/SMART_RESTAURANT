@@ -3,7 +3,6 @@
 const authService = require("../services/authService");
 const authRepo = require("../repositories/authRepository");
 
-
 exports.register = async (req, res) => {
   try {
     const user = await authService.register(req.body);
@@ -13,13 +12,18 @@ exports.register = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    return res.status(err.status || 500).json({ message: err.message || "Lỗi Server" });
+    return res
+      .status(err.status || 500)
+      .json({ message: err.message || "Lỗi Server" });
   }
 };
 
 exports.login = async (req, res) => {
   try {
-    const { accessToken, refreshToken, user } = await authService.login(req.body);
+    const { accessToken, refreshToken, user } = await authService.login({
+      ...req.body,
+      ip: req.ip,
+    });
 
     console.log(user);
 
@@ -35,14 +39,13 @@ exports.login = async (req, res) => {
       accessToken: accessToken,
       user,
     });
-
-    
   } catch (err) {
     console.error(err);
-    return res.status(err.status || 500).json({ message: err.message || "Lỗi Server" });
+    return res
+      .status(err.status || 500)
+      .json({ message: err.message || "Lỗi Server" });
   }
 };
-
 
 exports.refreshToken = async (req, res) => {
   try {
@@ -64,7 +67,7 @@ exports.refreshToken = async (req, res) => {
     return res.json({
       message: "Refresh token thành công",
       accessToken,
-      user, 
+      user,
     });
   } catch (err) {
     console.error(err);
@@ -76,7 +79,9 @@ exports.refreshToken = async (req, res) => {
 
 exports.checkEmail = async (req, res) => {
   try {
-    const email = String(req.query.email || "").trim().toLowerCase();
+    const email = String(req.query.email || "")
+      .trim()
+      .toLowerCase();
     if (!email) return res.json({ exists: false });
 
     const existed = await authRepo.findUserPublicByEmail(email);
@@ -93,24 +98,33 @@ exports.verifyEmail = async (req, res) => {
     return res.json({ message: "Xác thực email thành công", ...result });
   } catch (err) {
     console.error(err);
-    return res.status(err.status || 500).json({ message: err.message || "Lỗi Server" });
+    return res
+      .status(err.status || 500)
+      .json({ message: err.message || "Lỗi Server" });
   }
 };
 
 exports.resendVerifyEmail = async (req, res) => {
   try {
-    const result = await authService.resendVerifyEmail(req.body);
+    const result = await authService.resendVerifyEmail({
+      ...req.body,
+      ip: req.ip,
+    });
     return res.json({ message: "Đã gửi lại email xác thực", ...result });
   } catch (err) {
     console.error(err);
-    return res.status(err.status || 500).json({ message: err.message || "Lỗi Server" });
+    return res
+      .status(err.status || 500)
+      .json({ message: err.message || "Lỗi Server" });
   }
 };
 
 exports.googleLogin = async (req, res) => {
   try {
     const { credential } = req.body; // GIS trả về field "credential"
-    const { accessToken, refreshToken, user } = await authService.googleLogin({ credential });
+    const { accessToken, refreshToken, user } = await authService.googleLogin({
+      credential,
+    });
 
     res.cookie("refreshToken", refreshToken, {
       httpOnly: true,
@@ -126,13 +140,18 @@ exports.googleLogin = async (req, res) => {
     });
   } catch (err) {
     console.error(err);
-    return res.status(err.status || 500).json({ message: err.message || "Lỗi Server" });
+    return res
+      .status(err.status || 500)
+      .json({ message: err.message || "Lỗi Server" });
   }
 };
 
 exports.forgotPassword = async (req, res) => {
   try {
-    await authService.forgotPassword(req.body);
+    await authService.forgotPassword({
+      ...req.body,
+      ip: req.ip,
+    });
 
     // ✅ Không tiết lộ email có tồn tại hay không
     return res.json({
@@ -158,4 +177,3 @@ exports.resetPassword = async (req, res) => {
       .json({ message: err.message || "Reset mật khẩu thất bại" });
   }
 };
-

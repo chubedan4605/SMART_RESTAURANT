@@ -44,3 +44,15 @@ exports.updateAvatar = async (id, avatarUrl) => {
   );
   return rs.rows[0] || null;
 };
+
+exports.getCurrentSession = async (userId) => {
+  console.log("Fetching current session information for userId:", userId);
+  const rs = await db.query(
+    `select ts.id, ts.user_id, t.id as table_id, ts.session_token, t.qr_token, t.table_number
+      from table_sessions ts join tables t on ts.table_id = t.id
+      where ts.user_id = $1 and ts.status = 'active'`,
+    [userId]
+  );
+  
+  return rs.rows[0] || null;
+};

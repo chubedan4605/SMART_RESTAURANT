@@ -1,6 +1,8 @@
 const bcrypt = require("bcryptjs");
 const userRepo = require("../repositories/usersRepository");
 const authRepo = require("../repositories/authRepository");
+const { getRedisClient, isRedisReady } = require("../config/redis");
+
 
 // GET profile
 exports.getMe = async (userId) => {
@@ -95,4 +97,13 @@ exports.changePassword = async (userId, { currentPassword, newPassword }) => {
   await authRepo.updatePasswordById(userId, hashed);
 
   return true;
+};
+
+exports.getCurrentSession = async (userId) => {
+  try {
+    const infor = await userRepo.getCurrentSession(userId);
+    return infor;
+  } catch (error) {
+    throw error;
+  }
 };

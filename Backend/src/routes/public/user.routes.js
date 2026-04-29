@@ -8,6 +8,7 @@ const upload = require("../../middlewares/upload");
 
 router.get("/me", protect, userController.getMe);
 router.put("/me", protect, userController.updateMe);
+router.get("/me/current-session", protect, userController.getCurrentSession);
 router.post("/me/avatar", protect, upload.single("avatar"), userController.uploadMyAvatar);
 router.post("/me/change-password", protect, userController.changePassword);
 

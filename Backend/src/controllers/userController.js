@@ -65,3 +65,17 @@ exports.changePassword = async (req, res) => {
     });
   }
 };
+
+exports.getCurrentSession = async (req, res) => {
+  try {
+    console.log("Fetching session information for userId:", req.user.id);
+    const infor = await userService.getCurrentSession(req.user.id);
+    console.log("Session information:", infor);
+    return res.json({ infor });
+  } catch (err) {
+    console.error(err);
+    return res.status(err.status || 500).json({
+      message: err.message || "Lỗi Server",
+    });
+  }
+};

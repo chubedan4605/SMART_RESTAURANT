@@ -41,6 +41,9 @@ const SignIn = () => {
     try {
       const result = await dispatch(loginThunk(values)).unwrap();
 
+      // sleep 10s
+      // await new Promise((resolve) => setTimeout(resolve, 10000));
+
       toast.success(t("auth.loginSuccess"));
 
       const role = result?.user?.role;
@@ -52,6 +55,7 @@ const SignIn = () => {
       } else if (role === "kitchen") {
         navigate("/kitchen");
       } else {
+        
         navigate("/");
       }
     } catch (error) {
@@ -67,7 +71,6 @@ const SignIn = () => {
   const googleBtnRef = useRef(null);
   useEffect(() => {
     if (!window.google || !googleBtnRef.current) return;
-
     window.google.accounts.id.initialize({
       client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
       callback: async (response) => {

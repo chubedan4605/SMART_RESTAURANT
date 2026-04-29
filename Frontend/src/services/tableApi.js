@@ -2,11 +2,12 @@
 import axiosClient from "../store/axiosClient";
 
 // Kiểm tra bàn và tạo session mới khi quét QR
-export const checkAndCreateSession = async (tableCode, userId = null) => {
+export const checkAndCreateSession = async (tableCode, qrToken, userId = null) => {
   const response = await axiosClient.post(
     `/tables/${tableCode}/create-session`,
     {
       userId,
+      qrToken,
     },
   );
   return response.data;
@@ -98,6 +99,10 @@ export const tableApi = {
       tableIds: (res?.tableIds || tableIds).map(String),
     };
   },
+
+  
+  // lấy thông tin cuối cùng của user (dùng sau khi refresh token) 
+  getUserCurrentSession: () => axiosClient.get("/tables/find-session-active"),
 };
 
 export default tableApi;

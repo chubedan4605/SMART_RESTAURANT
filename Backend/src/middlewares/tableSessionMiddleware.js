@@ -16,7 +16,12 @@ exports.requireTableSession = async (req, res, next) => {
       });
     }
 
-    const result = await tableSessionService.validateSession(sessionToken);
+    const tableCode =
+      req.params.tableCode || req.body.tableCode || req.query.tableCode;
+    const result = await tableSessionService.validateSession(
+      tableCode,
+      sessionToken,
+    );
 
     if (!result.valid) {
       return res.status(401).json({
@@ -47,7 +52,12 @@ exports.optionalTableSession = async (req, res, next) => {
       req.query.sessionToken;
 
     if (sessionToken) {
-      const result = await tableSessionService.validateSession(sessionToken);
+      const tableCode =
+        req.params.tableCode || req.body.tableCode || req.query.tableCode;
+      const result = await tableSessionService.validateSession(
+        tableCode,
+        sessionToken,
+      );
       if (result.valid) {
         req.tableSession = result.session;
       }

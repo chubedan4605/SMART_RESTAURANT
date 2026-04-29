@@ -2,6 +2,173 @@ const crypto = require("crypto");
 const tableRepository = require("../repositories/tableRepository");
 const tableSessionRepository = require("../repositories/tableSessionRepository");
 const socketService = require("./socketService");
+const { getRedisClient, isRedisReady } = require("../config/redis");
+const {
+  TABLE_SESSION_TTL_SECONDS,
+  TABLE_SESSION_HEARTBEAT_TTL_SECONDS,
+} = require("../config/tableSession");
+
+const sessionTokenKey = (token) => `table:session:token:${token}`;
+const sessionIdKey = (sessionId) => `table:session:id:${sessionId}`;
+const tableKey = (tableId) => `table:session:table:${tableId}`;
+const userKey = (userId) => `table:session:user:${userId}`;
+const qrTokenKey = (qrToken) => `table:session:qr:${qrToken}`;
+
+function getRedis() {
+  const client = getRedisClient();
+  if (!client || !isRedisReady()) return null;
+  return client;
+}
+
+async function getSessionByToken(token) {
+  const client = getRedis();
+  if (!client) return null;
+  try {
+    const raw = await client.get(sessionTokenKey(token));
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    console.warn("Redis get session failed:", err.message);
+    return null;
+  }
+}
+
+async function getSessionById(sessionId) {
+  const client = getRedis();
+  if (!client) return null;
+  try {
+    const token = await client.get(sessionIdKey(sessionId));
+    if (!token) return null;
+    return getSessionByToken(token);
+  } catch (err) {
+    console.warn("Redis get session by id failed:", err.message);
+    return null;
+  }
+}
+
+async function getSessionByTableId(tableId) {
+  const client = getRedis();
+  if (!client) return null;
+  try {
+    const token = await client.get(tableKey(tableId));
+    if (!token) return null;
+    return getSessionByToken(token);
+  } catch (err) {
+    console.warn("Redis get session by table failed:", err.message);
+    return null;
+  }
+}
+
+async function getSessionByUserId(userId) {
+  const client = getRedis();
+  if (!client) return null;
+  try {
+    const token = await client.get(userKey(userId));
+    if (!token) return null;
+    return getSessionByToken(token);
+  } catch (err) {
+    console.warn("Redis get session by user failed:", err.message);
+    return null;
+  }
+}
+
+async function saveSession(session) {
+  const client = getRedis();
+  if (!client) return session;
+
+  const payload = {
+    ...session,
+    lastHeartbeatAt: new Date().toISOString(),
+  };
+
+  try {
+    const multi = client.multi();
+    multi.setEx(
+      sessionTokenKey(session.sessionToken),
+      TABLE_SESSION_TTL_SECONDS,
+      JSON.stringify(payload),
+    );
+    multi.setEx(
+      sessionIdKey(session.id),
+      TABLE_SESSION_TTL_SECONDS,
+      session.sessionToken,
+    );
+    multi.setEx(
+      tableKey(session.tableId),
+      TABLE_SESSION_TTL_SECONDS,
+      session.sessionToken,
+    );
+    if (session.userId) {
+      multi.setEx(
+        userKey(session.userId),
+        TABLE_SESSION_TTL_SECONDS,
+        session.sessionToken,
+      );
+    }
+    await multi.exec();
+  } catch (err) {
+    console.warn("Redis save session failed:", err.message);
+  }
+
+  return payload;
+}
+
+async function touchSession(session) {
+  const client = getRedis();
+  if (!client) return session;
+
+  const payload = {
+    ...session,
+    lastHeartbeatAt: new Date().toISOString(),
+  };
+
+  try {
+    const multi = client.multi();
+    multi.setEx(
+      sessionTokenKey(session.sessionToken),
+      TABLE_SESSION_HEARTBEAT_TTL_SECONDS,
+      JSON.stringify(payload),
+    );
+    multi.setEx(
+      sessionIdKey(session.id),
+      TABLE_SESSION_HEARTBEAT_TTL_SECONDS,
+      session.sessionToken,
+    );
+    multi.setEx(
+      tableKey(session.tableId),
+      TABLE_SESSION_HEARTBEAT_TTL_SECONDS,
+      session.sessionToken,
+    );
+    if (session.userId) {
+      multi.setEx(
+        userKey(session.userId),
+        TABLE_SESSION_HEARTBEAT_TTL_SECONDS,
+        session.sessionToken,
+      );
+    }
+    await multi.exec();
+  } catch (err) {
+    console.warn("Redis touch session failed:", err.message);
+  }
+
+  return payload;
+}
+
+async function deleteSession(session) {
+  const client = getRedis();
+  if (!client) return;
+
+  try {
+    const keys = [
+      sessionTokenKey(session.sessionToken),
+      sessionIdKey(session.id),
+      tableKey(session.tableId),
+    ];
+    if (session.userId) keys.push(userKey(session.userId));
+    await client.del(keys);
+  } catch (err) {
+    console.warn("Redis delete session failed:", err.message);
+  }
+}
 
 class TableSessionService {
   // Sinh session token ngẫu nhiên
@@ -29,39 +196,42 @@ class TableSessionService {
       throw err;
     }
 
-    // 3. Kiểm tra session hiện tại
-    const existingSession = await tableSessionRepository.findActiveByTableId(
-      table.id,
-    );
+    // 3. Kiểm tra session hiện tại trong Redis
+    const redisSession = await getSessionByTableId(table.id);
 
-    if (existingSession) {
-      // Session đã tồn tại, check xem userid đúng hay không
-      console.log(existingSession.user_id, userId);
+    console.log("Redis session for table:", redisSession);
 
-      if (
-        userId &&
-        existingSession.user_id &&
-        userId !== existingSession.user_id
-      ) {
+    if (redisSession) {
+      if (userId && redisSession.userId && userId !== redisSession.userId) {
         const err = new Error("Bàn đang được sử dụng bởi khách khác.");
         err.status = 400;
         throw err;
       }
 
+      const refreshed = await touchSession(redisSession);
       return {
         success: true,
         tableSession: {
-          id: existingSession.id,
-          sessionToken: existingSession.session_token,
-          tableId: existingSession.table_id,
-          tableNumber: table.table_number,
-          startedAt: existingSession.started_at,
+          id: refreshed.id,
+          sessionToken: refreshed.sessionToken,
+          tableId: refreshed.tableId,
+          tableNumber: refreshed.tableNumber,
+          startedAt: refreshed.startedAt,
         },
         isExisting: true,
       };
     }
 
-    // 4. Tạo session mới
+    // 3.1 Nếu DB còn session active nhưng Redis không có -> coi là hết hạn
+    const dbSession = await tableSessionRepository.findActiveByTableId(
+      table.id,
+    );
+    if (dbSession) {
+      await tableSessionRepository.endSession(dbSession.id);
+      await tableRepository.clearSession(table.id);
+    }
+
+    // 4. Tạo session mới trong DB (lưu lịch sử), Redis giữ active
     const sessionToken = this.generateSessionToken();
     const newSession = await tableSessionRepository.create({
       tableId: table.id,
@@ -70,6 +240,15 @@ class TableSessionService {
     });
 
     console.log("session token:", newSession);
+
+    await saveSession({
+      id: newSession.id,
+      sessionToken: newSession.session_token,
+      tableId: newSession.table_id,
+      tableNumber: table.table_number,
+      userId: newSession.user_id || null,
+      startedAt: newSession.started_at,
+    });
 
     // 5. Cập nhật session cho bàn
     await tableRepository.updateSession(table.id, newSession.id);
@@ -103,28 +282,46 @@ class TableSessionService {
   }
 
   async findSessionActive(userId) {
-    // 2. Tìm session active của user và bàn
-    const session =
-      await tableSessionRepository.findActiveByUserAndTable(userId);
+    const session = await getSessionByUserId(userId);
     if (session) {
+      const refreshed = await touchSession(session);
       return {
         hasSession: true,
         sessions: {
-          id: session.id,
-          sessionToken: session.session_token,
-          tableId: session.table_id,
-          tableNumber: session.table_number,
-          startedAt: session.started_at,
+          id: refreshed.id,
+          sessionToken: refreshed.sessionToken,
+          tableId: refreshed.tableId,
+          tableNumber: refreshed.tableNumber,
+          startedAt: refreshed.startedAt,
         },
       };
     }
+
+    const dbSession =
+      await tableSessionRepository.findActiveByUserAndTable(userId);
+    console.log("DB session for user:", dbSession);
+    if (dbSession) {
+      await tableSessionRepository.endSession(dbSession.id);
+      await tableRepository.clearSession(dbSession.table_id);
+    }
+
     return { hasSession: false };
   }
 
   // Kết thúc session
   async endSession(tableCode, sessionId) {
-    // 1. Tìm session
-    const session = await tableSessionRepository.findById(sessionId);
+    const redisSession = await getSessionById(sessionId);
+    const session = redisSession
+      ? {
+          id: redisSession.id,
+          sessionToken: redisSession.sessionToken,
+          tableId: redisSession.tableId,
+          tableNumber: redisSession.tableNumber,
+          userId: redisSession.userId,
+          startedAt: redisSession.startedAt,
+          status: "active",
+        }
+      : await tableSessionRepository.findById(sessionId);
 
     if (!session) {
       const err = new Error("Session không tồn tại");
@@ -138,9 +335,16 @@ class TableSessionService {
 
     // 2. Kết thúc session
     const endedSession = await tableSessionRepository.endSession(sessionId);
+    if (redisSession) {
+      await deleteSession(redisSession);
+    }
 
     // 3. Cập nhật trạng thái bàn về 'active' (available)
-    await tableRepository.updateStatus(session.table_id, "active");
+    await tableRepository.updateStatus(
+      session.tableId || session.table_id,
+      "active",
+    );
+    await tableRepository.clearSession(session.tableId || session.table_id);
 
     // 4. Lấy thông tin bàn đã cập nhật
     const updatedTable = await tableRepository.findById(session.table_id);
@@ -160,37 +364,46 @@ class TableSessionService {
 
   // Validate session token
   async validateSession(tableCode, sessionToken) {
-    // 1. Tìm session theo token
-    const session =
-      await tableSessionRepository.findBySessionToken(sessionToken);
+    const token = sessionToken || tableCode;
+    const tableCodeValue = sessionToken ? tableCode : null;
 
-    if (!session) {
+    const redisSession = await getSessionByToken(token);
+    if (!redisSession) {
+      const dbSession = await tableSessionRepository.findBySessionToken(token);
+      if (dbSession) {
+        await tableSessionRepository.endSession(dbSession.id);
+        await tableRepository.clearSession(dbSession.table_id);
+      }
+
       return {
         valid: false,
         message: "Session không hợp lệ hoặc đã hết hạn",
       };
     }
 
-    // 2. Kiểm tra bàn có khớp không
-    let table = await tableRepository.findByNumber(tableCode);
-    if (!table) {
-      table = await tableRepository.findById(tableCode);
+    if (tableCodeValue) {
+      let table = await tableRepository.findByNumber(tableCodeValue);
+      if (!table) {
+        table = await tableRepository.findById(tableCodeValue);
+      }
+
+      if (!table || redisSession.tableId !== table.id) {
+        return {
+          valid: false,
+          message: "Session không thuộc bàn này",
+        };
+      }
     }
 
-    if (!table || session.table_id !== table.id) {
-      return {
-        valid: false,
-        message: "Session không thuộc bàn này",
-      };
-    }
+    const refreshed = await touchSession(redisSession);
 
     return {
       valid: true,
       session: {
-        id: session.id,
-        tableId: session.table_id,
-        tableNumber: session.table_number,
-        startedAt: session.started_at,
+        id: refreshed.id,
+        tableId: refreshed.tableId,
+        tableNumber: refreshed.tableNumber,
+        startedAt: refreshed.startedAt,
       },
     };
   }

@@ -28,10 +28,12 @@ exports.checkAndCreateSession = async (req, res) => {
 
 exports.findSessionActive = async (req, res) => {
   try {
-    const { userId } = req.query;
+    const userId  = req.user.id;
     const result = await tableSessionService.findSessionActive(
       userId
     );
+
+    console.log("Active session for userId", userId, ":", result);
     res.json({
       success: true,
       data: result,

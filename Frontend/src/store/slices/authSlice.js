@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axiosClient, { injectStore } from "../axiosClient";
 import { toast } from "react-toastify";
+import tableApi from "../../services/tableApi";
 
 const getInitialToken = () => {
   try {
@@ -31,11 +32,23 @@ export const loginThunk = createAsyncThunk(
       // server thường trả: { token/accessToken, user }
       const res = await axiosClient.post("/auth/login", userData);
 
-
       const accessToken = res?.accessToken || null;
       const user = res?.user || null;
 
-      console.log('loginThunk received user:', user);
+      console.log("loginThunk received user:", user);
+
+      const userLastInfor = await tableApi.getUserCurrentSession();
+      console.log("User last information:>>>>>>>>>>>>>>>>>>>>>", userLastInfor.data);
+
+      if(userLastInfor.success && userLastInfor?.data?.sessions) {
+        localStorage.setItem("sessionToken", userLastInfor?.data.sessions?.sessionToken || "");
+        localStorage.setItem("tableCode", userLastInfor?.data.sessions?.tableId || "");
+        localStorage.setItem("tableNumber", userLastInfor?.data.sessions?.tableNumber || "");
+        localStorage.setItem("tableSessionId", userLastInfor?.data.sessions?.id || "");
+        localStorage.setItem("tableSession", userLastInfor?.data.sessions || "");
+        localStorage.setItem("qrToken", userLastInfor?.data.sessions?.qr_Token || "");
+      }
+
       return { accessToken, user };
     } catch (err) {
       const msg =
@@ -83,8 +96,9 @@ const authSlice = createSlice({
         state.accessToken = accessToken;
         state.isAuthenticated = !!accessToken;
 
-        if (accessToken) localStorage.setItem("accessToken", accessToken);
-        else localStorage.removeItem("accessToken");
+        if (accessToken) {
+          localStorage.setItem("accessToken", accessToken);
+        } else localStorage.removeItem("accessToken");
       }
 
       if (typeof user !== "undefined") {
@@ -92,7 +106,8 @@ const authSlice = createSlice({
 
         console.log("Updating user in authSlice:", state.user);
 
-        if (state.user) localStorage.setItem("user", JSON.stringify(state.user));
+        if (state.user)
+          localStorage.setItem("user", JSON.stringify(state.user));
         else localStorage.removeItem("user");
       }
     },
@@ -131,7 +146,7 @@ const authSlice = createSlice({
         state.error = null;
       })
       .addCase(loginThunk.fulfilled, (state, action) => {
-        console.log(action.payload)
+        console.log(action.payload);
         state.isLoading = false;
         state.accessToken = action.payload.accessToken;
         state.user = action.payload.user;
@@ -162,7 +177,7 @@ const authSlice = createSlice({
         state.isLoading = false;
         toast.success(
           action.payload?.message ||
-          "Register successful and please verify your email",
+            "Register successful and please verify your email",
         );
       })
       .addCase(registerThunk.rejected, (state, action) => {

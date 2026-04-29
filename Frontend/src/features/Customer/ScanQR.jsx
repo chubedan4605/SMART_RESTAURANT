@@ -28,7 +28,7 @@ const ScanQR = () => {
         // Kiểm tra xem người dùng có bàn hay chưa
         const existingTableSession = await tableApi.findSessionActive(user?.id);
 
-        console.log("existingTableSession:", existingTableSession);
+        console.log("existingTableSession:>>>>>>>>>>>>>>>>>>>>>", existingTableSession);
 
         if (existingTableSession.hasSession && existingTableSession.sessions) {
           if (existingTableSession.sessions.tableId === tableCode) {
@@ -52,12 +52,9 @@ const ScanQR = () => {
           }
         }
 
-        // Gọi API để kiểm tra bàn và tạo session mới
-
-        const sessionId = localStorage.getItem("");
-
         const response = await tableApi.checkAndCreateSession(
           tableCode,
+          user?.qrToken,
           user?.id,
         );
 

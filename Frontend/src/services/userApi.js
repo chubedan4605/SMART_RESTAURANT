@@ -20,4 +20,7 @@ export const userApi = {
 
   // đổi mật khẩu
   changePassword: (payload) => axiosClient.post("/users/me/change-password", payload),
+  
+  // lấy thông tin cuối cùng của user (dùng sau khi refresh token) 
+  getUserCurrentSession: () => axiosClient.get("/users/me/current-session"),
 };

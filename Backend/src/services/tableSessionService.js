@@ -71,6 +71,19 @@ async function getSessionByUserId(userId) {
   }
 }
 
+async function getSessionByQrToken(qrToken) {
+  const client = getRedis();
+  if (!client) return null;
+  try {
+    const token = await client.get(qrTokenKey(qrToken));
+    if (!token) return null;
+    return getSessionByToken(token);
+  } catch (err) {
+    console.warn("Redis get session by QR token failed:", err.message);
+    return null;
+  }
+}
+
 async function saveSession(session) {
   const client = getRedis();
   if (!client) return session;
@@ -80,12 +93,19 @@ async function saveSession(session) {
     lastHeartbeatAt: new Date().toISOString(),
   };
 
+  console.log("Saving session to Redis:", payload);
+
   try {
     const multi = client.multi();
     multi.setEx(
       sessionTokenKey(session.sessionToken),
       TABLE_SESSION_TTL_SECONDS,
       JSON.stringify(payload),
+    );
+    multi.setEx(
+      qrTokenKey(session.qrToken),
+      TABLE_SESSION_TTL_SECONDS,
+      session.sessionToken,
     );
     multi.setEx(
       sessionIdKey(session.id),
@@ -134,6 +154,11 @@ async function touchSession(session) {
       session.sessionToken,
     );
     multi.setEx(
+      qrTokenKey(session.qrToken),
+      TABLE_SESSION_HEARTBEAT_TTL_SECONDS,
+      session.sessionToken,
+    );
+    multi.setEx(
       tableKey(session.tableId),
       TABLE_SESSION_HEARTBEAT_TTL_SECONDS,
       session.sessionToken,
@@ -177,7 +202,7 @@ class TableSessionService {
   }
 
   // Kiểm tra bàn và tạo/lấy session
-  async checkAndCreateSession(tableCode, userId = null) {
+  async checkAndCreateSession(tableCode, userId = null, qrToken = null) {
     // 1. Tìm bàn theo table_number hoặc id
     let table = await tableRepository.findById(tableCode);
 
@@ -199,7 +224,7 @@ class TableSessionService {
     // 3. Kiểm tra session hiện tại trong Redis
     const redisSession = await getSessionByTableId(table.id);
 
-    console.log("Redis session for table:", redisSession);
+    // console.log("Redis session for table:", redisSession);
 
     if (redisSession) {
       if (userId && redisSession.userId && userId !== redisSession.userId) {
@@ -244,6 +269,7 @@ class TableSessionService {
     await saveSession({
       id: newSession.id,
       sessionToken: newSession.session_token,
+      qrToken: qrToken,
       tableId: newSession.table_id,
       tableNumber: table.table_number,
       userId: newSession.user_id || null,
@@ -272,6 +298,7 @@ class TableSessionService {
       tableSession: {
         id: newSession.id,
         sessionToken: newSession.session_token,
+        qrToken: newSession.qr_token,
         tableId: newSession.table_id,
         tableNumber: table.table_number,
         startedAt: newSession.started_at,
@@ -290,6 +317,7 @@ class TableSessionService {
         sessions: {
           id: refreshed.id,
           sessionToken: refreshed.sessionToken,
+          qrToken: refreshed.qrToken,
           tableId: refreshed.tableId,
           tableNumber: refreshed.tableNumber,
           startedAt: refreshed.startedAt,
@@ -315,6 +343,7 @@ class TableSessionService {
       ? {
           id: redisSession.id,
           sessionToken: redisSession.sessionToken,
+          qrToken: redisSession.qrToken,
           tableId: redisSession.tableId,
           tableNumber: redisSession.tableNumber,
           userId: redisSession.userId,

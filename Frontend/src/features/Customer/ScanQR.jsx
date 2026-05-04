@@ -28,7 +28,7 @@ const ScanQR = () => {
         // Kiểm tra xem người dùng có bàn hay chưa
         const existingTableSession = await tableApi.findSessionActive(user?.id);
 
-        console.log("existingTableSession:>>>>>>>>>>>>>>>>>>>>>", existingTableSession);
+        console.log("existingTableSession:", existingTableSession);
 
         if (existingTableSession.hasSession && existingTableSession.sessions) {
           if (existingTableSession.sessions.tableId === tableCode) {
@@ -52,9 +52,12 @@ const ScanQR = () => {
           }
         }
 
+        const qrToken = localStorage.getItem("qrToken");
+        console.log("QR Token from LocalStorage in ScanQR:", qrToken);
+        
         const response = await tableApi.checkAndCreateSession(
           tableCode,
-          user?.qrToken,
+          qrToken,
           user?.id,
         );
 
@@ -125,6 +128,7 @@ const ScanQR = () => {
         tableCode,
         bookingCode,
         user?.id,
+        qrToken,
       );
 
       if (response.success) {

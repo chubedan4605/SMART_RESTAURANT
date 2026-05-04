@@ -10,6 +10,7 @@ export const checkAndCreateSession = async (tableCode, qrToken, userId = null) =
       qrToken,
     },
   );
+  console.log("qrToken send to create:>>>>>>>>>>>>>>>>>>>>>", qrToken);
   return response.data;
 };
 

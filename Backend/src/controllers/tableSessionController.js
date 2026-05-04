@@ -5,12 +5,14 @@ exports.checkAndCreateSession = async (req, res) => {
   try {
     const { tableCode } = req.params;
     const { userId } = req.body;
+    const { qrToken } = req.body;
 
-    console.log(req.body);
+    console.log("Received checkAndCreateSession request with tableCode:", tableCode, "userId:", userId, "qrToken:", qrToken);
 
     const result = await tableSessionService.checkAndCreateSession(
       tableCode,
-      userId
+      userId,
+      qrToken
     );
 
     res.json({

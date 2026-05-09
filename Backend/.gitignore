@@ -13,6 +13,9 @@ dist-ssr
 *.local
 .env
 
+# Secrets
+Smart-Restaurant_key.pem
+
 
 # Editor directories and files
 .vscode/*

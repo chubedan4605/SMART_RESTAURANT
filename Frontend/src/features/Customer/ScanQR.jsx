@@ -128,7 +128,7 @@ const ScanQR = () => {
         tableCode,
         bookingCode,
         user?.id,
-        qrToken,
+        // qrToken,
       );
 
       if (response.success) {
